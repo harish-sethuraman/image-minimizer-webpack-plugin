@@ -54,11 +54,17 @@ export = ImageMinimizerPlugin;
  * @typedef {InferDefaultType<T> | undefined} BasicTransformerOptions
  */
 /**
+ * @typedef {Object} ResizeOptions
+ * @property {number} [width]
+ * @property {number} [height]
+ * @property {boolean} [enabled]
+ */
+/**
  * @template T
  * @callback BasicTransformerImplementation
  * @param {WorkerResult} original
  * @param {BasicTransformerOptions<T>} [options]
- * @returns {Promise<WorkerResult>}
+ * @returns {Promise<WorkerResult | null>}
  */
 /**
  * @typedef {Object} BasicTransformerHelpers
@@ -101,6 +107,7 @@ export = ImageMinimizerPlugin;
  * @template T
  * @typedef {Object} InternalWorkerOptions
  * @property {string} filename
+ * @property {AssetInfo=} info
  * @property {Buffer} input
  * @property {Transformer<T> | Transformer<T>[]} transformer
  * @property {string} [severityError]
@@ -165,6 +172,8 @@ declare namespace ImageMinimizerPlugin {
     imageminGenerate,
     squooshMinify,
     squooshGenerate,
+    sharpMinify,
+    sharpGenerate,
     Schema,
     WebpackPluginInstance,
     Compiler,
@@ -185,6 +194,7 @@ declare namespace ImageMinimizerPlugin {
     CustomOptions,
     InferDefaultType,
     BasicTransformerOptions,
+    ResizeOptions,
     BasicTransformerImplementation,
     BasicTransformerHelpers,
     TransformerFunction,
@@ -216,7 +226,9 @@ type PluginOptions<T, G> = {
    */
   minimizer?:
     | (T extends any[]
-        ? { [P in keyof T]: Minimizer<T[P]> }
+        ? T extends infer T_1
+          ? { [P in keyof T_1]: Minimizer<T[P]> }
+          : never
         : Minimizer<T> | Minimizer<T>[])
     | undefined;
   /**
@@ -224,7 +236,9 @@ type PluginOptions<T, G> = {
    */
   generator?:
     | (G extends any[]
-        ? { [P_1 in keyof G]: Generator<G[P_1]> }
+        ? G extends infer T_2
+          ? { [P_1 in keyof T_2]: Generator<G[P_1]> }
+          : never
         : Generator<G>[])
     | undefined;
   /**
@@ -250,6 +264,8 @@ import { imageminMinify } from "./utils.js";
 import { imageminGenerate } from "./utils.js";
 import { squooshMinify } from "./utils.js";
 import { squooshGenerate } from "./utils.js";
+import { sharpMinify } from "./utils.js";
+import { sharpGenerate } from "./utils.js";
 type Schema = import("schema-utils/declarations/validate").Schema;
 type WebpackPluginInstance = import("webpack").WebpackPluginInstance;
 type Compiler = import("webpack").Compiler;
@@ -295,10 +311,15 @@ type CustomOptions = {
 };
 type InferDefaultType<T> = T extends infer U ? U : CustomOptions;
 type BasicTransformerOptions<T> = InferDefaultType<T> | undefined;
+type ResizeOptions = {
+  width?: number | undefined;
+  height?: number | undefined;
+  enabled?: boolean | undefined;
+};
 type BasicTransformerImplementation<T> = (
   original: WorkerResult,
   options?: BasicTransformerOptions<T>
-) => Promise<WorkerResult>;
+) => Promise<WorkerResult | null>;
 type BasicTransformerHelpers = {
   setup?: (() => void) | undefined;
   teardown?: (() => void) | undefined;
@@ -324,6 +345,7 @@ type Minimizer<T> = Omit<Transformer<T>, "preset" | "type">;
 type Generator<T> = Transformer<T>;
 type InternalWorkerOptions<T> = {
   filename: string;
+  info?: AssetInfo | undefined;
   input: Buffer;
   transformer: Transformer<T> | Transformer<T>[];
   severityError?: string | undefined;

@@ -852,7 +852,7 @@ describe("imagemin plugin", () => {
     const stringStats = stats.toString({ relatedAssets: true });
 
     expect(stringStats).toMatch(
-      /asset loader-test.webp.+\[from: loader-test.webp\] \[generated\]/
+      /asset loader-test.webp.+\[from: loader-test.png\] \[generated\]/
     );
   });
 
@@ -972,6 +972,52 @@ describe("imagemin plugin", () => {
     await expect(isOptimized("loader-test.svg", compilation)).resolves.toBe(
       false
     );
+  });
+
+  it("should optimizes and generate animated images (sharpGenerate)", async () => {
+    const stats = await runWebpack({
+      entry: path.join(fixturesPath, "generator-and-minimizer-animation.js"),
+      imageminPluginOptions: {
+        test: /\.(jpe?g|png|webp|gif)$/i,
+        generator: [
+          {
+            preset: "webp",
+            implementation: ImageMinimizerPlugin.sharpGenerate,
+            options: {
+              encodeOptions: {
+                webp: {
+                  quality: 40,
+                },
+              },
+            },
+          },
+        ],
+        minimizer: {
+          implementation: ImageMinimizerPlugin.sharpMinify,
+          options: {
+            encodeOptions: {
+              gif: {
+                colors: 8,
+              },
+            },
+          },
+        },
+      },
+    });
+    const { compilation } = stats;
+    const { warnings, errors } = compilation;
+
+    expect(warnings).toHaveLength(0);
+    expect(errors).toHaveLength(0);
+
+    const webpAsset = compilation.getAsset("animation-test.webp");
+    const gifAsset = compilation.getAsset("animation-test.gif");
+
+    expect(webpAsset.info.size).toBeGreaterThan(4_000);
+    expect(webpAsset.info.size).toBeLessThan(130_000);
+
+    expect(gifAsset.info.size).toBeGreaterThan(2_000);
+    expect(gifAsset.info.size).toBeLessThan(130_000);
   });
 
   it("should throw an error on empty minimizer", async () => {
@@ -1174,6 +1220,63 @@ describe("imagemin plugin", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toMatch(
       /Multiple values for the 'encodeOptions' option is not supported for 'loader-test.png', specify only one codec for the generator/
+    );
+  });
+
+  it("should generate throw an error on multiple 'encodeOptions' options using 'sharpGenerate'", async () => {
+    const stats = await runWebpack({
+      entry: path.join(fixturesPath, "generator-and-minimizer-3.js"),
+      imageminPluginOptions: {
+        test: /\.(jpe?g|gif|json|svg|png|webp)$/i,
+        generator: [
+          {
+            preset: "webp-other",
+            implementation: ImageMinimizerPlugin.sharpGenerate,
+            options: {
+              encodeOptions: {
+                webp: {
+                  lossless: true,
+                },
+                avif: {},
+              },
+            },
+          },
+        ],
+      },
+    });
+    const { compilation } = stats;
+    const { warnings, errors } = compilation;
+
+    expect(warnings).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(
+      /Multiple values for the 'encodeOptions' option is not supported for 'loader-test.png', specify only one codec for the generator/
+    );
+  });
+
+  it("should return error on empty encodeOptions with 'sharpGenerate'", async () => {
+    const stats = await runWebpack({
+      entry: path.join(fixturesPath, "generator-and-minimizer-3.js"),
+      imageminPluginOptions: {
+        test: /\.(jpe?g|gif|json|svg|png|webp)$/i,
+        generator: [
+          {
+            preset: "webp-other",
+            implementation: ImageMinimizerPlugin.sharpGenerate,
+            options: {
+              encodeOptions: {},
+            },
+          },
+        ],
+      },
+    });
+    const { compilation } = stats;
+    const { warnings, errors } = compilation;
+
+    expect(warnings).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(
+      /No result from 'sharp' for '.+', please configure the 'encodeOptions' option to generate images/
     );
   });
 
@@ -1458,7 +1561,7 @@ describe("imagemin plugin", () => {
     expect(/image\/png/i.test(ext.mime)).toBe(true);
   });
 
-  it("should throw an error on unknown format", async () => {
+  it("should throw an error on unknown format (squooshGenerate)", async () => {
     const stats = await runWebpack({
       entry: path.join(fixturesPath, "generator-and-minimizer-5.js"),
       imageminPluginOptions: {
@@ -1485,6 +1588,36 @@ describe("imagemin plugin", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toMatch(
       /Error with 'loader-test.txt': Binary blob has an unsupported format/g
+    );
+  });
+
+  it("should throw an error on unknown format (sharpGenerate)", async () => {
+    const stats = await runWebpack({
+      entry: path.join(fixturesPath, "generator-and-minimizer-5.js"),
+      imageminPluginOptions: {
+        test: /\.(jpe?g|gif|json|svg|png|webp|txt)$/i,
+        generator: [
+          {
+            preset: "avif",
+            implementation: ImageMinimizerPlugin.sharpGenerate,
+            options: {
+              encodeOptions: {
+                webp: {
+                  lossless: true,
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+    const { compilation } = stats;
+    const { warnings, errors } = compilation;
+
+    expect(warnings).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(
+      /Error with 'loader-test.txt': Input file has an unsupported format/g
     );
   });
 

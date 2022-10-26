@@ -1,6 +1,49 @@
 /** @typedef {import("./index").WorkerResult} WorkerResult */
 /** @typedef {import("./index").FilenameFn} FilenameFn */
 
+const isFilenameProcessed = Symbol("isFilenameProcessed");
+
+/**
+ * @template T
+ * @param {WorkerResult} result
+ * @param {import("./index").InternalWorkerOptions<T>} options
+ * @param {undefined | string | FilenameFn} filenameTemplate
+ */
+function processFilenameTemplate(result, options, filenameTemplate) {
+  if (
+    // @ts-ignore
+    !result.info[isFilenameProcessed] &&
+    typeof filenameTemplate !== "undefined" &&
+    typeof options.generateFilename === "function"
+  ) {
+    result.filename = options.generateFilename(filenameTemplate, {
+      filename: result.filename,
+    });
+
+    result.filename = result.filename
+      .replace(/\[width\]/gi, result.info.width)
+      .replace(/\[height\]/gi, result.info.height);
+
+    // @ts-ignore
+    result.info[isFilenameProcessed] = true;
+  }
+}
+
+/**
+ * @template T
+ * @param {WorkerResult} result
+ * @param {import("./index").InternalWorkerOptions<T>} options
+ */
+function processSeverityError(result, options) {
+  if (options.severityError === "off") {
+    result.warnings = [];
+    result.errors = [];
+  } else if (options.severityError === "warning") {
+    result.warnings = [...result.warnings, ...result.errors];
+    result.errors = [];
+  }
+}
+
 /**
  * @template T
  * @param {import("./index").InternalWorkerOptions<T>} options
@@ -13,81 +56,46 @@ async function worker(options) {
     filename: options.filename,
     warnings: [],
     errors: [],
-    info: {},
+    info: {
+      sourceFilename:
+        options.info &&
+        typeof options.info === "object" &&
+        typeof options.info.sourceFilename === "string"
+          ? options.info.sourceFilename
+          : typeof options.filename === "string"
+          ? options.filename
+          : undefined,
+    },
   };
 
   if (!result.data) {
     result.errors.push(new Error("Empty input"));
-
     return result;
   }
-
-  /**
-   * @param {WorkerResult} item
-   * @param {undefined | string | FilenameFn} filename
-   * @returns {WorkerResult}
-   */
-  const normalizeProcessedResult = (item, filename) => {
-    if (!item.info) {
-      item.info = {};
-    }
-
-    if (!item.filename) {
-      item.filename = options.filename;
-    }
-
-    if (!item.errors) {
-      item.errors = [];
-    }
-
-    if (!item.warnings) {
-      item.warnings = [];
-    }
-
-    if (options.severityError === "off") {
-      item.warnings = [];
-      item.errors = [];
-    } else if (options.severityError === "warning") {
-      item.warnings = [...item.warnings, ...item.errors];
-      item.errors = [];
-    }
-
-    if (
-      typeof filename !== "undefined" &&
-      typeof options.generateFilename !== "undefined"
-    ) {
-      item.filename = options.generateFilename(filename, {
-        filename: item.filename,
-      });
-    }
-
-    return item;
-  };
 
   const transformers = Array.isArray(options.transformer)
     ? options.transformer
     : [options.transformer];
 
-  for (let i = 0; i <= transformers.length - 1; i++) {
+  /** @type {undefined | string | FilenameFn} */
+  let filenameTemplate;
+
+  for (const transformer of transformers) {
     if (
-      transformers[i].filter &&
-      // @ts-ignore
-      !transformers[i].filter(
-        /** @type {Buffer} */ (options.input),
-        options.filename
-      )
+      typeof transformer.filter === "function" &&
+      !transformer.filter(options.input, options.filename)
     ) {
       continue;
     }
 
-    /** @type {WorkerResult} */
+    /** @type {WorkerResult | null} */
     let processedResult;
 
     try {
       // eslint-disable-next-line no-await-in-loop
-      processedResult = await transformers[i].implementation(
+      processedResult = await transformer.implementation(
         result,
-        transformers[i].options
+        transformer.options
       );
     } catch (error) {
       result.errors.push(
@@ -99,7 +107,7 @@ async function worker(options) {
       return result;
     }
 
-    if (!processedResult || !Buffer.isBuffer(processedResult.data)) {
+    if (processedResult && !Buffer.isBuffer(processedResult.data)) {
       result.errors.push(
         new Error(
           "minimizer function doesn't return the 'data' property or result is not a 'Buffer' value"
@@ -109,11 +117,19 @@ async function worker(options) {
       return result;
     }
 
-    result = normalizeProcessedResult(
-      processedResult,
-      transformers[i].filename
-    );
+    if (processedResult) {
+      result = processedResult;
+      filenameTemplate ??= transformer.filename;
+    }
   }
+
+  result.info ??= {};
+  result.errors ??= [];
+  result.warnings ??= [];
+  result.filename ??= options.filename;
+
+  processSeverityError(result, options);
+  processFilenameTemplate(result, options, filenameTemplate);
 
   return result;
 }

@@ -5,15 +5,13 @@ const path = require("path");
 /** @typedef {import("imagemin").Options} ImageminOptions */
 /** @typedef {import("webpack").WebpackError} WebpackError */
 
-const notSettled = Symbol("not-settled");
-
 /**
  * @template T
  * @typedef {() => Promise<T>} Task
  */
 
 /**
- * Run tasks with limited concurency.
+ * Run tasks with limited concurrency.
  * @template T
  * @param {number} limit - Limit of tasks that run at once.
  * @param {Task<T>[]} tasks - List of tasks to run.
@@ -36,18 +34,17 @@ function throttleAll(limit, tasks) {
   }
 
   return new Promise((resolve, reject) => {
-    // eslint-disable-next-line unicorn/new-for-builtins
-    const result = Array(tasks.length).fill(notSettled);
+    const result = /** @type {T[]} */ ([]);
     const entries = tasks.entries();
+    let tasksFulfilled = 0;
+
     const next = () => {
       const { done, value } = entries.next();
 
       if (done) {
-        const isLast = !result.includes(notSettled);
-
-        if (isLast) {
-          // eslint-disable-next-line node/callback-return
+        if (tasksFulfilled === tasks.length) {
           resolve(result);
+          return;
         }
 
         return;
@@ -56,18 +53,20 @@ function throttleAll(limit, tasks) {
       const [index, task] = value;
 
       /**
-       * @param {T} i
+       * @param {T} taskResult
        */
-      const onFulfilled = (i) => {
-        result[index] = i;
+      const onFulfilled = (taskResult) => {
+        result[index] = taskResult;
+        tasksFulfilled += 1;
         next();
       };
 
       task().then(onFulfilled, reject);
     };
 
-    // eslint-disable-next-line unicorn/new-for-builtins
-    Array(limit).fill(0).forEach(next);
+    for (let i = 0; i < limit; i++) {
+      next();
+    }
   });
 }
 
@@ -558,7 +557,7 @@ async function imageminNormalizeConfig(imageminConfig) {
  * @template T
  * @param {WorkerResult} original
  * @param {T} minimizerOptions
- * @returns {Promise<WorkerResult>}
+ * @returns {Promise<WorkerResult | null>}
  */
 async function imageminGenerate(original, minimizerOptions) {
   const minimizerOptionsNormalized = /** @type {ImageminOptions} */ (
@@ -584,8 +583,7 @@ async function imageminGenerate(original, minimizerOptions) {
     );
 
     original.errors.push(newError);
-
-    return original;
+    return null;
   }
 
   const { ext: extOutput } = fileTypeFromBuffer(result) || {};
@@ -608,10 +606,7 @@ async function imageminGenerate(original, minimizerOptions) {
     info: {
       ...original.info,
       generated: true,
-      generatedBy:
-        original.info && original.info.generatedBy
-          ? ["imagemin", ...original.info.generatedBy]
-          : ["imagemin"],
+      generatedBy: ["imagemin", ...(original.info?.generatedBy ?? [])],
     },
   };
 }
@@ -620,7 +615,7 @@ async function imageminGenerate(original, minimizerOptions) {
  * @template T
  * @param {WorkerResult} original
  * @param {T} options
- * @returns {Promise<WorkerResult>}
+ * @returns {Promise<WorkerResult | null>}
  */
 async function imageminMinify(original, options) {
   const minimizerOptionsNormalized = /** @type {ImageminOptions} */ (
@@ -646,8 +641,7 @@ async function imageminMinify(original, options) {
     );
 
     original.errors.push(newError);
-
-    return original;
+    return null;
   }
 
   if (!isAbsoluteURL(original.filename)) {
@@ -661,7 +655,7 @@ async function imageminMinify(original, options) {
         )
       );
 
-      return original;
+      return null;
     }
   }
 
@@ -673,10 +667,7 @@ async function imageminMinify(original, options) {
     info: {
       ...original.info,
       minimized: true,
-      minimizedBy:
-        original.info && original.info.minimizedBy
-          ? ["imagemin", ...original.info.minimizedBy]
-          : ["imagemin"],
+      minimizedBy: ["imagemin", ...(original.info?.minimizedBy ?? [])],
     },
   };
 }
@@ -710,9 +701,9 @@ function squooshImagePoolSetup() {
     const os = require("os");
     // In some cases cpus() returns undefined
     // https://github.com/nodejs/node/issues/19022
-    const cpus = os.cpus() || { length: 1 };
+    const threads = os.cpus()?.length ?? 1;
 
-    pool = squooshImagePoolCreate(Math.max(cpus.length - 1, 1));
+    pool = squooshImagePoolCreate(threads);
 
     // workarounds for https://github.com/GoogleChromeLabs/squoosh/issues/1152
     // @ts-ignore
@@ -733,7 +724,7 @@ async function squooshImagePoolTeardown() {
  * @template T
  * @param {WorkerResult} original
  * @param {T} minifyOptions
- * @returns {Promise<WorkerResult>}
+ * @returns {Promise<WorkerResult | null>}
  */
 async function squooshGenerate(original, minifyOptions) {
   // eslint-disable-next-line node/no-unpublished-require
@@ -744,23 +735,18 @@ async function squooshGenerate(original, minifyOptions) {
 
   const squooshOptions = /** @type {SquooshOptions} */ (minifyOptions || {});
 
-  /**
-   * @type {undefined | Object.<string, any>}
-   */
-  let preprocessors;
-
-  for (const preprocessor of Object.keys(squoosh.preprocessors)) {
-    if (typeof squooshOptions[preprocessor] !== "undefined") {
-      if (!preprocessors) {
-        preprocessors = {};
+  const preprocEntries = Object.entries(squooshOptions).filter(
+    ([key, value]) => {
+      if (key === "resize" && value?.enabled === false) {
+        return false;
       }
 
-      preprocessors[preprocessor] = squooshOptions[preprocessor];
+      return typeof squoosh.preprocessors[key] !== "undefined";
     }
-  }
+  );
 
-  if (typeof preprocessors !== "undefined") {
-    await image.preprocess(preprocessors);
+  if (preprocEntries.length > 0) {
+    await image.preprocess(Object.fromEntries(preprocEntries));
   }
 
   const { encodeOptions } = squooshOptions;
@@ -779,8 +765,7 @@ async function squooshGenerate(original, minifyOptions) {
     );
 
     original.errors.push(newError);
-
-    return original;
+    return null;
   }
 
   if (!isReusePool) {
@@ -794,7 +779,7 @@ async function squooshGenerate(original, minifyOptions) {
       )
     );
 
-    return original;
+    return null;
   }
 
   if (Object.keys(image.encodedWith).length > 1) {
@@ -804,28 +789,26 @@ async function squooshGenerate(original, minifyOptions) {
       )
     );
 
-    return original;
+    return null;
   }
 
-  const ext = path.extname(original.filename).toLowerCase();
   const { binary, extension } = await Object.values(image.encodedWith)[0];
-  const newFilename = original.filename.replace(
-    new RegExp(`${ext}$`),
-    `.${extension}`
-  );
+  const { width, height } = (await image.decoded).bitmap;
+
+  const { dir: fileDir, name: fileName } = path.parse(original.filename);
+  const filename = path.join(fileDir, `${fileName}.${extension}`);
 
   return {
-    filename: newFilename,
+    filename,
     data: Buffer.from(binary),
     warnings: [...original.warnings],
     errors: [...original.errors],
     info: {
       ...original.info,
+      width,
+      height,
       generated: true,
-      generatedBy:
-        original.info && original.info.generatedBy
-          ? ["squoosh", ...original.info.generatedBy]
-          : ["squoosh"],
+      generatedBy: ["squoosh", ...(original.info?.generatedBy ?? [])],
     },
   };
 }
@@ -838,7 +821,7 @@ squooshGenerate.teardown = squooshImagePoolTeardown;
  * @template T
  * @param {WorkerResult} original
  * @param {T} options
- * @returns {Promise<WorkerResult>}
+ * @returns {Promise<WorkerResult | null>}
  */
 async function squooshMinify(original, options) {
   // eslint-disable-next-line node/no-unpublished-require
@@ -864,30 +847,26 @@ async function squooshMinify(original, options) {
   const targetCodec = targets[ext];
 
   if (!targetCodec) {
-    return original;
+    return null;
   }
 
   const isReusePool = Boolean(pool);
   const imagePool = pool || squooshImagePoolCreate();
   const image = imagePool.ingestImage(new Uint8Array(original.data));
   const squooshOptions = /** @type {SquooshOptions} */ (options || {});
-  /**
-   * @type {undefined | Object.<string, any>}
-   */
-  let preprocessors;
 
-  for (const preprocessor of Object.keys(squoosh.preprocessors)) {
-    if (typeof squooshOptions[preprocessor] !== "undefined") {
-      if (!preprocessors) {
-        preprocessors = {};
+  const preprocEntries = Object.entries(squooshOptions).filter(
+    ([key, value]) => {
+      if (key === "resize" && value?.enabled === false) {
+        return false;
       }
 
-      preprocessors[preprocessor] = squooshOptions[preprocessor];
+      return typeof squoosh.preprocessors[key] !== "undefined";
     }
-  }
+  );
 
-  if (typeof preprocessors !== "undefined") {
-    await image.preprocess(preprocessors);
+  if (preprocEntries.length > 0) {
+    await image.preprocess(Object.fromEntries(preprocEntries));
   }
 
   const { encodeOptions = {} } = squooshOptions;
@@ -910,8 +889,7 @@ async function squooshMinify(original, options) {
     );
 
     original.errors.push(newError);
-
-    return original;
+    return null;
   }
 
   if (!isReusePool) {
@@ -919,6 +897,7 @@ async function squooshMinify(original, options) {
   }
 
   const { binary } = await image.encodedWith[targets[ext]];
+  const { width, height } = (await image.decoded).bitmap;
 
   return {
     filename: original.filename,
@@ -927,11 +906,10 @@ async function squooshMinify(original, options) {
     errors: [...original.errors],
     info: {
       ...original.info,
+      width,
+      height,
       minimized: true,
-      minimizedBy:
-        original.info && original.info.minimizedBy
-          ? ["squoosh", ...original.info.minimizedBy]
-          : ["squoosh"],
+      minimizedBy: ["squoosh", ...(original.info?.minimizedBy ?? [])],
     },
   };
 }
@@ -939,6 +917,202 @@ async function squooshMinify(original, options) {
 squooshMinify.setup = squooshImagePoolSetup;
 
 squooshMinify.teardown = squooshImagePoolTeardown;
+
+/** @typedef {import("sharp")} SharpLib */
+/** @typedef {import("sharp").Sharp} Sharp */
+/** @typedef {import("sharp").ResizeOptions & { enabled?: boolean }} ResizeOptions */
+
+/**
+ * @typedef SharpEncodeOptions
+ * @type {object}
+ * @property {import("sharp").AvifOptions} [avif]
+ * @property {import("sharp").GifOptions} [gif]
+ * @property {import("sharp").HeifOptions} [heif]
+ * @property {import("sharp").JpegOptions} [jpeg]
+ * @property {import("sharp").JpegOptions} [jpg]
+ * @property {import("sharp").PngOptions} [png]
+ * @property {import("sharp").WebpOptions} [webp]
+ */
+
+/**
+ * @typedef SharpFormat
+ * @type {keyof SharpEncodeOptions}
+ */
+
+// TODO remove the `SizeSuffix` option in the next major release, because we support `[width]` and `[height]`
+/**
+ * @typedef SharpOptions
+ * @type {object}
+ * @property {ResizeOptions} [resize]
+ * @property {number | 'auto'} [rotate]
+ * @property {SizeSuffix} [sizeSuffix]
+ * @property {SharpEncodeOptions} [encodeOptions]
+ */
+
+/**
+ * @typedef SizeSuffix
+ * @type {(width: number, height: number) => string}
+ */
+
+// https://github.com/lovell/sharp/blob/e40a881ab4a5e7b0e37ba17e31b3b186aef8cbf6/lib/output.js#L7-L23
+const SHARP_FORMATS = new Map([
+  ["avif", "avif"],
+  ["gif", "gif"],
+  ["heic", "heif"],
+  ["heif", "heif"],
+  ["j2c", "jp2"],
+  ["j2k", "jp2"],
+  ["jp2", "jp2"],
+  ["jpeg", "jpeg"],
+  ["jpg", "jpeg"],
+  ["jpx", "jp2"],
+  ["png", "png"],
+  ["raw", "raw"],
+  ["tif", "tiff"],
+  ["tiff", "tiff"],
+  ["webp", "webp"],
+]);
+
+/**
+ * @param {WorkerResult} original
+ * @param {SharpOptions} minimizerOptions
+ * @param {SharpFormat | null} targetFormat
+ * @returns {Promise<WorkerResult | null>}
+ */
+async function sharpTransform(
+  original,
+  minimizerOptions = {},
+  targetFormat = null
+) {
+  const inputExt = path.extname(original.filename).slice(1).toLowerCase();
+
+  if (!SHARP_FORMATS.has(inputExt)) {
+    if (targetFormat) {
+      const error = new Error(
+        `Error with '${original.filename}': Input file has an unsupported format`
+      );
+
+      original.errors.push(error);
+    }
+
+    return null;
+  }
+
+  /** @type {SharpLib} */
+  // eslint-disable-next-line node/no-unpublished-require
+  const sharp = require("sharp");
+  const imagePipeline = sharp(original.data, { animated: true });
+
+  // ====== rotate ======
+
+  if (typeof minimizerOptions.rotate === "number") {
+    imagePipeline.rotate(minimizerOptions.rotate);
+  } else if (minimizerOptions.rotate === "auto") {
+    imagePipeline.rotate();
+  }
+
+  // ====== resize ======
+
+  if (minimizerOptions.resize) {
+    const { enabled = true, ...params } = minimizerOptions.resize;
+
+    if (
+      enabled &&
+      (typeof params.width === "number" || typeof params.height === "number")
+    ) {
+      imagePipeline.resize(params);
+    }
+  }
+
+  // ====== convert ======
+
+  const imageMetadata = await imagePipeline.metadata();
+
+  const outputFormat =
+    targetFormat ?? /** @type {SharpFormat} */ (imageMetadata.format);
+
+  const encodeOptions = minimizerOptions.encodeOptions?.[outputFormat];
+
+  imagePipeline.toFormat(outputFormat, encodeOptions);
+
+  const result = await imagePipeline.toBuffer({ resolveWithObject: true });
+
+  // ====== rename ======
+
+  const outputExt = targetFormat ? outputFormat : inputExt;
+  const { dir: fileDir, name: fileName } = path.parse(original.filename);
+  const { width, height } = result.info;
+  const sizeSuffix =
+    typeof minimizerOptions.sizeSuffix === "function"
+      ? minimizerOptions.sizeSuffix(width, height)
+      : "";
+  const filename = path.join(fileDir, `${fileName}${sizeSuffix}.${outputExt}`);
+  const processedFlag = targetFormat ? "generated" : "minimized";
+  const processedBy = targetFormat ? "generatedBy" : "minimizedBy";
+
+  return {
+    filename,
+    data: result.data,
+    warnings: [...original.warnings],
+    errors: [...original.errors],
+    info: {
+      ...original.info,
+      width,
+      height,
+      [processedFlag]: true,
+      [processedBy]: ["sharp", ...(original.info?.[processedBy] ?? [])],
+    },
+  };
+}
+
+/**
+ * @template T
+ * @param {WorkerResult} original
+ * @param {T} minimizerOptions
+ * @returns {Promise<WorkerResult | null>}
+ */
+function sharpGenerate(original, minimizerOptions) {
+  const sharpOptions = /** @type {SharpOptions} */ (minimizerOptions ?? {});
+
+  const targetFormats = /** @type {SharpFormat[]} */ (
+    Object.keys(sharpOptions.encodeOptions ?? {})
+  );
+
+  if (targetFormats.length === 0) {
+    const error = new Error(
+      `No result from 'sharp' for '${original.filename}', please configure the 'encodeOptions' option to generate images`
+    );
+
+    original.errors.push(error);
+    return Promise.resolve(null);
+  }
+
+  if (targetFormats.length > 1) {
+    const error = new Error(
+      `Multiple values for the 'encodeOptions' option is not supported for '${original.filename}', specify only one codec for the generator`
+    );
+
+    original.errors.push(error);
+    return Promise.resolve(null);
+  }
+
+  const [targetFormat] = targetFormats;
+
+  return sharpTransform(original, sharpOptions, targetFormat);
+}
+
+/**
+ * @template T
+ * @param {WorkerResult} original
+ * @param {T} minimizerOptions
+ * @returns {Promise<WorkerResult | null>}
+ */
+function sharpMinify(original, minimizerOptions) {
+  return sharpTransform(
+    original,
+    /** @type {SharpOptions} */ (minimizerOptions)
+  );
+}
 
 module.exports = {
   throttleAll,
@@ -948,4 +1122,6 @@ module.exports = {
   imageminGenerate,
   squooshMinify,
   squooshGenerate,
+  sharpMinify,
+  sharpGenerate,
 };

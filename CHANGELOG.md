@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [3.6.1](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.6.0...v3.6.1) (2022-09-19)
+
+
+### Bug Fixes
+
+* fix resize option enabled flag (`squoosh`) ([#356](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/356)) ([b2a5015](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/b2a50151b9dcd9f79307695e52a2b12db72a0a7e))
+* support for animated images (`sharp`) ([#358](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/358)) ([3c30355](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/3c3035536303f95cc74ebaed5247731789422965))
+* throw an error on unsupported image formats (`sharp`) ([#359](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/359)) ([c0b193b](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/c0b193b38d4e488ca0651f2bea13065700cb3bf1))
+
+## [3.6.0](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.5.0...v3.6.0) (2022-09-16)
+
+
+### Features
+
+* supported more resize options (only `sharp`) ([#355](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/355)) ([d365db3](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/d365db3db18476435cf8952aaa23801dd7e466ee))
+
+## [3.5.0](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.4.0...v3.5.0) (2022-09-15)
+
+
+### Features
+
+* add `width`/`w` and `height`/`h` query parameters to resize image ([52ee1c8](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/52ee1c84cf935e2ebbf4bfe38567a0cb73bd6c13))
+
+
+### Bug Fixes
+
+* `implementation` types ([#353](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/353)) ([a57fcdf](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/a57fcdfc7121f1ceda178dd7987623433745b21e))
+
+## [3.4.0](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.3.1...v3.4.0) (2022-09-09)
+
+
+### Features
+
+* add `[width]` and `[height]` placeholders for the `filename` option ([#346](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/346)) ([682c22b](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/682c22b81f2f1af96e83f0e0805fd5406a209324))
+
+
+### Bug Fixes
+
+* types ([cd7c7a7](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/cd7c7a7c7f12eb883399cf01ad7c9102e90b845b))
+
+### [3.3.1](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.3.0...v3.3.1) (2022-09-05)
+
+
+### Bug Fixes
+
+* assets info for sharp ([#338](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/338)) ([c897d30](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/c897d30bed8532fec1312be62483281589402b0b))
+* avoid renaming unsupported formats ([#339](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/339)) ([18e30ef](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/18e30ef3da70b39384f389e6729d56fb5b24af59))
+* sharp types ([#337](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/337)) ([ae3a03b](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/ae3a03b926a6bce29dee2829490a99d16394a501))
+
+## [3.3.0](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.2.3...v3.3.0) (2022-08-12)
+
+
+### Features
+
+* add `sharp` minifier/generator implementation ([#329](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/issues/329)) ([5c440f6](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/commit/5c440f6e8257fe0a4ebabcbe22a09063902a6c5e))
+
 ### [3.2.3](https://github.com/webpack-contrib/image-minimizer-webpack-plugin/compare/v3.2.2...v3.2.3) (2022-01-13)
 
 
